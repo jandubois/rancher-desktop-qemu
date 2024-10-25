@@ -24,19 +24,32 @@ jobs:
         - { arch: aarch64, runs-on: macos-14 }
         - { arch: x86_64, runs-on: macos-13 }
     runs-on: ${{ matrix.runs-on }}
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
-    - run: mkdir -p build
-    - run: brew install filemonitor ninja
-    - run: brew install --ignore-dependencies lima # Don't pull in qemu
     - uses: actions/checkout@v4
       with:
         persist-credentials: false
-    - run: brew install --build-from-source ./qemu.rb
+    - name: Uninstall all brew packages and clear cache
+      run: |
+        brew list | xargs brew uninstall --force
+        brew autoremove
+        brew cleanup
+        rm -rf ~/Library/Caches/Homebrew
+    - name: Build qemu and all prerequisites from source
+      run: |
+        brew install --build-from-source $(brew deps --include-build ./qemu.rb) ./qemu.rb
+        (cd ~/Library/Caches/Homebrew; tar -cvzf - *.tar.gz) >qemu-darwin-source-${{ matrix.arch }}.tar.gz
       env:
         HOMEBREW_DEBUG: 1
         HOMEBREW_VERBOSE: 1
-      timeout-minutes: 20
+    - uses: actions/upload-artifact@v4
+      with:
+        name: qemu-darwin-source-${{ matrix.arch }}
+        path: qemu-darwin-source-${{ matrix.arch }}.tar.gz
+        if-no-files-found: error
+    - run: mkdir -p build
+    - run: brew install filemonitor ninja
+    - run: brew install --ignore-dependencies lima # Don't pull in qemu
     - run: cpan -Ti JSON
     - run: echo "$PWD/install/bin" >> "$GITHUB_PATH"
     - run: perl lima-and-qemu.pl alpine
